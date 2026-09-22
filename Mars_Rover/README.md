@@ -44,3 +44,53 @@ Expected Output:
 10. rovers cannot share the same coordinates after running command
 11. rovers cannot be deployed to the same coordinates
 12. will run over telnet or ssh session
+
+## Project Structure
+Mars_Rover/
+├── README.md
+├── input.txt
+└── src/
+    ├── main.py         # entry point — reads input, deploys rovers, prints output
+    ├── position.py     # Position — immutable (x, y) coordinate
+    ├── direction.py    # Direction — N/E/S/W enum with turn & step math
+    ├── plateau.py      # Plateau — shared world state (bounds + occupied cells)
+    └── rover.py        # Rover — turn, move, execute commands
+
+## Modules
+
+### Position — immutable coordinate
+A frozen dataclass holding x and y. Being immutable makes it hashable, so positions can live in a set (used by Plateau.occupied). Moving a rover never mutates a Position — it rebinds to a new one.
+
+### Direction — compass enum
+An Enum with N=0, E=1, S=2, W=3. Three methods:
+
+turn_left() → (value + 3) % 4
+
+turn_right() → (value + 1) % 4
+
+delta() → (dx, dy) step, looked up in a module-level DELTAS table ordered N, E, S, W.
+
+The enum values double as list indices, so turning and stepping are pure arithmetic — no branching.
+
+### Plateau — the shared world
+Holds the grid bounds and a set of currently occupied cells. One instance is shared by every rover, so it detects:
+
+Moves off the grid (in_bounds)
+
+Moves onto another rover's cell (is_free)
+
+Deployments onto an occupied cell
+
+Methods: in_bounds, is_free, can_place, occupy, vacate. It knows about Position only — not about Rover.
+
+### Rover — the agent
+Owns its position, facing, and a reference to the shared plateau. On __init__, it validates its start cell and registers it via plateau.occupy. Moves are three steps in strict order:
+
+1. compute candidate = position + direction.delta()
+2. if not plateau.can_place(candidate): return   # blocked
+3. plateau.vacate(old) → rebind self.position → plateau.occupy(new)
+
+That order matters: the old cell must be freed before rebinding, or the plateau drifts out of sync. execute(commands) iterates character by character and dispatches to turn_left, turn_right, or move.
+
+### main — orchestration only
+The plateau is created once before the loop, so every rover sees the same world. Rovers are processed sequentially — each finishes before the next is deployed — so no concurrency controls are neede
